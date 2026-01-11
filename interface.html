@@ -1,0 +1,524 @@
+import React, { useState, useMemo } from 'react';
+import { Upload, Calculator, TrendingUp, Award, Info, AlertCircle, CheckCircle, BarChart3 } from 'lucide-react';
+
+const SuperNutriScoreInterface = () => {
+  const [activeTab, setActiveTab] = useState('calculator');
+  const [formData, setFormData] = useState({
+    nom: '',
+    energie: '',
+    graisses_saturees: '',
+    sucres: '',
+    sel: '',
+    proteines: '',
+    fibres: '',
+    fruits_legumes_noix: '',
+    additifs: '',
+    bio: false,
+    ecoscore: ''
+  });
+  const [result, setResult] = useState(null);
+
+  // Tables de points Nutri-Score (selon document)
+  const POINTS_ENERGIE = [
+    [335, 0], [670, 1], [1005, 2], [1340, 3], [1675, 4],
+    [2010, 5], [2345, 6], [2680, 7], [3015, 8], [3350, 9], [Infinity, 10]
+  ];
+
+  const POINTS_SUCRES = [
+    [3.4, 0], [6.8, 1], [10, 2], [14, 3], [17, 4],
+    [20, 5], [24, 6], [27, 7], [31, 8], [34, 9],
+    [37, 10], [41, 11], [44, 12], [48, 13], [51, 14], [Infinity, 15]
+  ];
+
+  const POINTS_AG_SATURES = [
+    [1, 0], [2, 1], [3, 2], [4, 3], [5, 4],
+    [6, 5], [7, 6], [8, 7], [9, 8], [10, 9], [Infinity, 10]
+  ];
+
+  const POINTS_SODIUM = [
+    [80, 0], [160, 1], [240, 2], [320, 3], [400, 4],
+    [480, 5], [560, 6], [640, 7], [720, 8], [800, 9],
+    [880, 10], [960, 11], [1040, 12], [1120, 13], [1200, 14],
+    [1280, 15], [1360, 16], [1440, 17], [1520, 18], [1600, 19], [Infinity, 20]
+  ];
+
+  const POINTS_FIBRES = [[0, 0], [3.0, 1], [4.1, 2], [5.2, 3], [6.3, 4], [7.4, 5]];
+  const POINTS_PROTEINES = [[0, 0], [2.4, 1], [4.8, 2], [7.2, 3], [9.6, 4], [12, 5], [14, 6], [17, 7]];
+  const POINTS_FRUITS_LEGUMES = [[0, 0], [40, 1], [60, 2], [80, 5]];
+
+  const getPoints = (valeur, table) => {
+    for (let [seuil, points] of table) {
+      if (valeur <= seuil) return points;
+    }
+    return table[table.length - 1][1];
+  };
+
+  const getPointsPositifs = (valeur, table) => {
+    let points = 0;
+    for (let [seuil, pts] of table) {
+      if (valeur > seuil) points = pts;
+      else break;
+    }
+    return points;
+  };
+
+  const calculerNutriScore = () => {
+    const energie_kj = parseFloat(formData.energie) < 1000 
+      ? parseFloat(formData.energie) * 4.184 
+      : parseFloat(formData.energie);
+    const sucres_g = parseFloat(formData.sucres) || 0;
+    const ag_satures_g = parseFloat(formData.graisses_saturees) || 0;
+    const sodium_mg = parseFloat(formData.sel) * 400 || 0;
+    const proteines_g = parseFloat(formData.proteines) || 0;
+    const fibres_g = parseFloat(formData.fibres) || 0;
+    const fruits_legumes_pct = parseFloat(formData.fruits_legumes_noix) || 0;
+
+    const points_energie = getPoints(energie_kj, POINTS_ENERGIE);
+    const points_sucres = getPoints(sucres_g, POINTS_SUCRES);
+    const points_ag_satures = getPoints(ag_satures_g, POINTS_AG_SATURES);
+    const points_sodium = getPoints(sodium_mg, POINTS_SODIUM);
+
+    const composante_negative = points_energie + points_sucres + points_ag_satures + points_sodium;
+
+    const points_fibres = getPointsPositifs(fibres_g, POINTS_FIBRES);
+    const points_proteines = getPointsPositifs(proteines_g, POINTS_PROTEINES);
+    const points_fruits_legumes = getPointsPositifs(fruits_legumes_pct, POINTS_FRUITS_LEGUMES);
+
+    let composante_positive;
+    let proteines_comptees;
+
+    if (composante_negative >= 11 && fruits_legumes_pct <= 80) {
+      composante_positive = points_fibres + points_fruits_legumes;
+      proteines_comptees = false;
+    } else {
+      composante_positive = points_fibres + points_proteines + points_fruits_legumes;
+      proteines_comptees = true;
+    }
+
+    const score_final = composante_negative - composante_positive;
+
+    let categorie = 'E';
+    if (score_final <= 0) categorie = 'A';
+    else if (score_final <= 2) categorie = 'B';
+    else if (score_final <= 10) categorie = 'C';
+    else if (score_final <= 18) categorie = 'D';
+
+    // SuperNutri-Score
+    const scores_electre = { 'A': 5, 'B': 4, 'C': 3, 'D': 2, 'E': 1 };
+    const eco_scores = { 'A': 5, 'B': 4, 'C': 3, 'D': 2, 'E': 1 };
+    
+    let super_score = scores_electre[categorie];
+    if (formData.ecoscore && eco_scores[formData.ecoscore]) {
+      super_score += (eco_scores[formData.ecoscore] - 3) * 0.3;
+    }
+    if (formData.bio) {
+      super_score += 0.5;
+    }
+
+    let super_categorie = 'E';
+    let super_explication = 'À limiter dans votre alimentation';
+    if (super_score >= 4.5) {
+      super_categorie = 'A';
+      super_explication = 'Excellent choix nutritionnel et environnemental!';
+    } else if (super_score >= 3.5) {
+      super_categorie = 'B';
+      super_explication = 'Bon choix avec quelques réserves';
+    } else if (super_score >= 2.5) {
+      super_categorie = 'C';
+      super_explication = 'Choix acceptable, amélioration possible';
+    } else if (super_score >= 1.5) {
+      super_categorie = 'D';
+      super_explication = 'À consommer avec modération';
+    }
+
+    setResult({
+      score: score_final,
+      categorie,
+      composante_negative,
+      composante_positive,
+      proteines_comptees,
+      details: {
+        points_energie,
+        points_sucres,
+        points_ag_satures,
+        points_sodium,
+        points_fibres,
+        points_proteines,
+        points_fruits_legumes
+      },
+      super_categorie,
+      super_score,
+      super_explication
+    });
+  };
+
+  const getCategorieColor = (cat) => {
+    const colors = {
+      'A': '#038141',
+      'B': '#85bb2f',
+      'C': '#fecb02',
+      'D': '#ee8100',
+      'E': '#e63e11'
+    };
+    return colors[cat] || '#999';
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    calculerNutriScore();
+    setActiveTab('results');
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 p-4">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+          <div className="flex items-center gap-4 mb-2">
+            <Award className="w-12 h-12 text-green-600" />
+            <div>
+              <h1 className="text-4xl font-bold text-gray-800">SuperNutri-Score</h1>
+              <p className="text-gray-600">Système d'évaluation transparent des aliments</p>
+            </div>
+          </div>
+          <div className="flex gap-2 mt-4 text-sm">
+            <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full">Nutri-Score</span>
+            <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full">ELECTRE TRI</span>
+            <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full">Eco-Score</span>
+          </div>
+        </div>
+
+        {/* Navigation Tabs */}
+        <div className="bg-white rounded-xl shadow-lg mb-6 p-2 flex gap-2">
+          <button
+            onClick={() => setActiveTab('info')}
+            className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all ${
+              activeTab === 'info' 
+                ? 'bg-green-600 text-white shadow-md' 
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
+          >
+            <Info className="inline w-5 h-5 mr-2" />
+            Information
+          </button>
+          <button
+            onClick={() => setActiveTab('calculator')}
+            className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all ${
+              activeTab === 'calculator' 
+                ? 'bg-green-600 text-white shadow-md' 
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
+          >
+            <Calculator className="inline w-5 h-5 mr-2" />
+            Calculateur
+          </button>
+          <button
+            onClick={() => setActiveTab('results')}
+            className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all ${
+              activeTab === 'results' 
+                ? 'bg-green-600 text-white shadow-md' 
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
+            disabled={!result}
+          >
+            <TrendingUp className="inline w-5 h-5 mr-2" />
+            Résultats
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="bg-white rounded-2xl shadow-xl p-6">
+          {/* Info Tab */}
+          {activeTab === 'info' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-800 mb-4">À propos du SuperNutri-Score</h2>
+                <p className="text-gray-700 leading-relaxed mb-4">
+                  Le SuperNutri-Score est un système d'évaluation avancé qui combine trois méthodologies complémentaires pour offrir une vision complète de la qualité nutritionnelle et environnementale des aliments.
+                </p>
+              </div>
+
+              <div className="grid md:grid-cols-3 gap-4">
+                <div className="bg-green-50 p-4 rounded-xl border-2 border-green-200">
+                  <h3 className="font-bold text-green-800 mb-2 flex items-center gap-2">
+                    <CheckCircle className="w-5 h-5" />
+                    1. Nutri-Score
+                  </h3>
+                  <p className="text-sm text-gray-700">
+                    Calcul officiel selon la méthodologie Mars 2025. Évalue la qualité nutritionnelle de A (meilleur) à E (moins bon).
+                  </p>
+                </div>
+
+                <div className="bg-blue-50 p-4 rounded-xl border-2 border-blue-200">
+                  <h3 className="font-bold text-blue-800 mb-2 flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5" />
+                    2. ELECTRE TRI
+                  </h3>
+                  <p className="text-sm text-gray-700">
+                    Méthode d'aide à la décision multicritère pour une classification robuste basée sur des profils limites.
+                  </p>
+                </div>
+
+                <div className="bg-purple-50 p-4 rounded-xl border-2 border-purple-200">
+                  <h3 className="font-bold text-purple-800 mb-2 flex items-center gap-2">
+                    <Award className="w-5 h-5" />
+                    3. Critères Extra
+                  </h3>
+                  <p className="text-sm text-gray-700">
+                    Intègre l'Eco-Score (impact environnemental) et le label Bio pour une évaluation globale.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="font-bold text-yellow-800 mb-1">Comment utiliser ?</h4>
+                    <p className="text-sm text-gray-700">
+                      Remplissez les valeurs nutritionnelles pour 100g de produit. Les informations se trouvent sur l'emballage dans le tableau nutritionnel. Plus vous fournissez de données, plus le calcul sera précis.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Calculator Tab */}
+          {activeTab === 'calculator' && (
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">Calculer le Nutri-Score</h2>
+              
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Nom du produit
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.nom}
+                    onChange={(e) => setFormData({...formData, nom: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="Ex: Yaourt nature"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Énergie (kcal ou kJ / 100g) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={formData.energie}
+                    onChange={(e) => setFormData({...formData, energie: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="250"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Acides gras saturés (g / 100g) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={formData.graisses_saturees}
+                    onChange={(e) => setFormData({...formData, graisses_saturees: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="2.5"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Sucres (g / 100g) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={formData.sucres}
+                    onChange={(e) => setFormData({...formData, sucres: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="5.0"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Sel (g / 100g) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.sel}
+                    onChange={(e) => setFormData({...formData, sel: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="0.5"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Protéines (g / 100g) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={formData.proteines}
+                    onChange={(e) => setFormData({...formData, proteines: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="3.0"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Fibres (g / 100g)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={formData.fibres}
+                    onChange={(e) => setFormData({...formData, fibres: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="1.5"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Fruits/légumes/noix (%)
+                  </label>
+                  <input
+                    type="number"
+                    step="1"
+                    min="0"
+                    max="100"
+                    value={formData.fruits_legumes_noix}
+                    onChange={(e) => setFormData({...formData, fruits_legumes_noix: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="0"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Nombre d'additifs
+                  </label>
+                  <input
+                    type="number"
+                    step="1"
+                    min="0"
+                    value={formData.additifs}
+                    onChange={(e) => setFormData({...formData, additifs: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="0"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Eco-Score
+                  </label>
+                  <select
+                    value={formData.ecoscore}
+                    onChange={(e) => setFormData({...formData, ecoscore: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  >
+                    <option value="">Non renseigné</option>
+                    <option value="A">A - Excellent</option>
+                    <option value="B">B - Bon</option>
+                    <option value="C">C - Moyen</option>
+                    <option value="D">D - Faible</option>
+                    <option value="E">E - Très faible</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center">
+                  <label className="flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.bio}
+                      onChange={(e) => setFormData({...formData, bio: e.target.checked})}
+                      className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                    />
+                    <span className="ml-2 text-sm font-medium text-gray-700">
+                      Label Bio
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-6 rounded-xl transition-colors shadow-lg flex items-center justify-center gap-2"
+              >
+                <Calculator className="w-5 h-5" />
+                Calculer le Score
+              </button>
+            </form>
+          )}
+
+          {/* Results Tab */}
+          {activeTab === 'results' && result && (
+            <div className="space-y-6">
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">Résultats pour "{formData.nom || 'Produit'}"</h2>
+
+              {/* Nutri-Score Result */}
+              <div className="bg-gradient-to-r from-green-50 to-blue-50 p-6 rounded-xl border-2 border-green-200">
+                <h3 className="text-xl font-bold mb-4 text-gray-800">Nutri-Score Officiel</h3>
+                <div className="flex items-center gap-6">
+                  <div 
+                    className="w-32 h-32 rounded-2xl flex items-center justify-center text-white font-bold text-5xl shadow-xl"
+                    style={{ backgroundColor: getCategorieColor(result.categorie) }}
+                  >
+                    {result.categorie}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-3xl font-bold text-gray-800 mb-2">Score: {result.score}</p>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="bg-red-100 p-2 rounded">
+                        <span className="font-semibold text-red-800">Composante négative:</span> {result.composante_negative}
+                      </div>
+                      <div className="bg-green-100 p-2 rounded">
+                        <span className="font-semibold text-green-800">Composante positive:</span> {result.composante_positive}
+                      </div>
+                    </div>
+                    {!result.proteines_comptees && (
+                      <p className="mt-2 text-xs text-amber-700 bg-amber-50 p-2 rounded">
+                        ⚠️ Protéines non comptabilisées (composante négative ≥ 11 et fruits/légumes ≤ 80%)
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* SuperNutri-Score Result */}
+              <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-6 rounded-xl border-2 border-purple-200">
+                <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+                  <Award className="w-6 h-6 text-purple-600" />
+                  SuperNutri-Score (Modèle Combiné)
+                </h3>
+                <div className="flex items-center gap-6">
+                  <div 
+                    className="w-32 h-32 rounded-2xl flex items-center justify-center text-white font-bold text-5xl shadow-xl"
+                    style={{ backgroundColor: getCategorieColor(result.super_categorie) }}
+                  >
+                    {result.super_categorie}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-2xl font-bold text-gray-800 mb-2">Score: {result.super_score.toFixed(2)}</p>
+                    <p className="text-gray-700 mb-3">{result.super_explication}</p>
+                    <div className="flex gap-2 flex-wrap">
+                      <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs">
+                        Nutri-Score: {result.categorie}
+                      </span>
+                      {formData.ecoscore && (
+                        <span className=
